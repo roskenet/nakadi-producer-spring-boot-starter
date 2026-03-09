@@ -1,12 +1,11 @@
 package org.zalando.nakadiproducer;
 
+import nakadi.NakadiClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
-import org.zalando.fahrschein.NakadiClient;
-import org.zalando.fahrschein.http.api.RequestFactory;
 import org.zalando.nakadiproducer.config.EmbeddedDataSourceConfig;
 import org.zalando.nakadiproducer.eventlog.EventLogWriter;
 import org.zalando.nakadiproducer.eventlog.impl.EventLogRepository;

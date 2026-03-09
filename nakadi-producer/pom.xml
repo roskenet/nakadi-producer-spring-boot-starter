@@ -42,9 +42,10 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.zalando</groupId>
-            <artifactId>fahrschein</artifactId>
-            <version>0.24.0</version>
+            <groupId>org.zalando.nakadi</groupId>
+            <artifactId>nakadi-java-client</artifactId>
+            <version>0.23.1-SNAPSHOT</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

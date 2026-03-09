@@ -3,8 +3,6 @@ package org.zalando.nakadiproducer.transmission.impl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.zalando.fahrschein.EventPublishingException;
-import org.zalando.fahrschein.domain.BatchItemResponse;
 import org.zalando.nakadiproducer.eventlog.impl.EventLog;
 import org.zalando.nakadiproducer.eventlog.impl.EventLogRepository;
 import org.zalando.nakadiproducer.transmission.NakadiPublishingClient;
@@ -15,7 +13,6 @@ import javax.transaction.Transactional;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -106,9 +103,9 @@ public class EventTransmissionService {
             );
             successfulEvents = batch.stream().map(BatchItem::getEventLogEntry);
             log.info("Sent {} events of type {}.", batch.size(), eventType);
-        } catch (EventPublishingException e) {
+        } catch (NakadiJavaPublishingException e) {
             log.error("{} out of {} events of type {} failed to be sent. Exception ",
-                    e.getResponses().length, batch.size(), eventType, e);
+                    e.getResponses().size(), batch.size(), eventType, e);
             List<String> failedEids = collectEids(e);
             successfulEvents =
                     batch.stream()
@@ -119,8 +116,10 @@ public class EventTransmissionService {
         eventLogRepository.delete(successfulEvents.collect(Collectors.toList()));
     }
 
-    private List<String> collectEids(EventPublishingException e) {
-        return Arrays.stream(e.getResponses()).map(BatchItemResponse::getEid).collect(Collectors.toList());
+    private List<String> collectEids(NakadiJavaPublishingException e) {
+        return e.getResponses().stream()
+                .map(NakadiJavaPublishingException.BatchItemResponse::getEid)
+                .collect(Collectors.toList());
     }
 
     private boolean lockNearlyExpired(EventLog eventLog) {

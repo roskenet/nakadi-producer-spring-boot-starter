@@ -10,13 +10,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
-import org.zalando.fahrschein.EventPublishingException;
-import org.zalando.fahrschein.domain.BatchItemResponse;
 import org.zalando.nakadiproducer.eventlog.impl.EventLog;
 import org.zalando.nakadiproducer.eventlog.impl.EventLogRepository;
 import org.zalando.nakadiproducer.transmission.MockNakadiPublishingClient;
 import org.zalando.nakadiproducer.util.Fixture;
 
+import java.io.IOException;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
@@ -183,9 +182,15 @@ public class EventTransmissionServiceTest {
         EventLog ev2 = new EventLog(2, "type1", payloadString, null, now(), now(), null, now().plus(5, MINUTES), null);
         EventLog ev3 = new EventLog(3, "type2", payloadString, null, now(), now(), null, now().plus(5, MINUTES), null);
 
-        doThrow(new EventPublishingException(new BatchItemResponse[]{
-                new BatchItemResponse("00000000-0000-0000-0000-000000000002", BatchItemResponse.PublishingStatus.ABORTED, BatchItemResponse.Step.ENRICHING, "Something went wrong")
-        }))
+        java.util.List<NakadiJavaPublishingException.BatchItemResponse> batchItems = new java.util.ArrayList<>();
+        NakadiJavaPublishingException.BatchItemResponse item = new NakadiJavaPublishingException.BatchItemResponse();
+        item.setEid("00000000-0000-0000-0000-000000000002");
+        item.setPublishingStatus("aborted");
+        item.setStep("enriching");
+        item.setDetail("Something went wrong");
+        batchItems.add(item);
+
+        doThrow(new NakadiJavaPublishingException(batchItems))
                 .when(publishingClient).publish(eq("type1"), any());
 
         doCallRealMethod()

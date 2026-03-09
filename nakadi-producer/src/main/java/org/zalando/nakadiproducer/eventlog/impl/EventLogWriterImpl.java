@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import org.zalando.fahrschein.Preconditions;
 import org.zalando.nakadiproducer.eventlog.CompactionKeyExtractor;
 import org.zalando.nakadiproducer.flowid.FlowIdComponent;
 import org.zalando.nakadiproducer.eventlog.EventLogWriter;
@@ -55,7 +54,9 @@ public class EventLogWriterImpl implements EventLogWriter {
      * @return a single extractor based on the list which will return a key when any of the extractors returns one.
      */
     private static CompactionKeyExtractor joinCompactors(List<CompactionKeyExtractor> list) {
-        Preconditions.checkArgument(!list.isEmpty());
+        if (list.isEmpty()) {
+            throw new IllegalArgumentException("List of compaction key extractors cannot be empty");
+        }
         if(list.size() == 1) {
             // the most common case: just one extractor per event type.
             return list.get(0);

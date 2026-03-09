@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -23,10 +24,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
-import org.zalando.fahrschein.NakadiClient;
-import org.zalando.fahrschein.http.api.ContentEncoding;
-import org.zalando.fahrschein.http.api.RequestFactory;
-import org.zalando.fahrschein.http.simple.SimpleRequestFactory;
 import org.zalando.nakadiproducer.eventlog.CompactionKeyExtractor;
 import org.zalando.nakadiproducer.eventlog.EventLogWriter;
 import org.zalando.nakadiproducer.eventlog.impl.EventLogRepository;
@@ -41,7 +38,7 @@ import org.zalando.nakadiproducer.snapshots.impl.SnapshotEventCreationEndpoint;
 import org.zalando.nakadiproducer.transmission.NakadiPublishingClient;
 import org.zalando.nakadiproducer.transmission.impl.EventTransmissionService;
 import org.zalando.nakadiproducer.transmission.impl.EventTransmitter;
-import org.zalando.nakadiproducer.transmission.impl.FahrscheinNakadiPublishingClient;
+import org.zalando.nakadiproducer.transmission.impl.NakadiJavaPublishingClient;
 import org.zalando.tracer.Tracer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -53,23 +50,65 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class NakadiProducerAutoConfiguration {
 
     @ConditionalOnProperty(name="nakadi-producer.submission-enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnMissingBean({NakadiPublishingClient.class, NakadiClient.class})
+    @ConditionalOnMissingBean(NakadiPublishingClient.class)
+    @ConditionalOnClass(name = "nakadi.NakadiClient")
     @Configuration
-    @Import(FahrscheinWithTokensNakadiClientConfiguration.StupsTokenConfiguration.class)
-    static class FahrscheinWithTokensNakadiClientConfiguration {
+    @Import(NakadiJavaWithTokensClientConfiguration.StupsTokenConfiguration.class)
+    static class NakadiJavaWithTokensClientConfiguration {
 
         @Bean
         public NakadiPublishingClient nakadiProducerPublishingClient(
                 AccessTokenProvider accessTokenProvider,
                 @Value("${nakadi-producer.nakadi-base-uri}") URI nakadiBaseUri,
-                RequestFactory requestFactory) {
-            return new FahrscheinNakadiPublishingClient(NakadiClient.builder(nakadiBaseUri, requestFactory)
-                    .withAccessTokenProvider(accessTokenProvider::getAccessToken).build());
+                @Value("${nakadi-producer.enable-compression:true}") boolean enableCompression) throws Exception {
+
+            // Use reflection to create nakadi-java client without compile-time dependency
+            try {
+                // Load the NakadiClient class
+                Class<?> nakadiClientClass = Class.forName("nakadi.NakadiClient");
+                Class<?> tokenProviderClass = Class.forName("nakadi.TokenProvider");
+
+                // Create TokenProvider lambda that wraps the AccessTokenProvider
+                Object tokenProvider = java.lang.reflect.Proxy.newProxyInstance(
+                        Thread.currentThread().getContextClassLoader(),
+                        new Class[] { tokenProviderClass },
+                        (proxy, method, args) -> {
+                            if (method.getName().equals("authHeaderValue")) {
+                                String token = accessTokenProvider.getAccessToken();
+                                return Optional.ofNullable(token);
+                            }
+                            return null;
+                        }
+                );
+
+                // Get the newBuilder method
+                Object builder = nakadiClientClass.getMethod("newBuilder").invoke(null);
+
+                // Call baseURI
+                builder.getClass().getMethod("baseURI", java.net.URI.class).invoke(builder, nakadiBaseUri);
+
+                // Call tokenProvider
+                builder.getClass().getMethod("tokenProvider", tokenProviderClass).invoke(builder, tokenProvider);
+
+                // Handle compression
+                if (enableCompression) {
+                    builder.getClass().getMethod("enablePublishingCompression").invoke(builder);
+                }
+
+                // Build the client
+                Object nakadiClient = builder.getClass().getMethod("build").invoke(builder);
+
+                return new NakadiJavaPublishingClient(nakadiClient);
+            } catch (ClassNotFoundException e) {
+                // Fallback for when nakadi-java is not on the classpath
+                log.error("nakadi-java-client not found on classpath", e);
+                throw new IllegalStateException("nakadi-java-client library is required but not found", e);
+            }
         }
 
         @ConditionalOnClass(name = "org.zalando.stups.tokens.Tokens")
         @ConditionalOnProperty(name="nakadi-producer.submission-enabled", havingValue = "true", matchIfMissing = true)
-        @ConditionalOnMissingBean({NakadiPublishingClient.class, NakadiClient.class})
+        @ConditionalOnMissingBean(AccessTokenProvider.class)
         @Configuration
         static class StupsTokenConfiguration {
             @Bean(destroyMethod = "stop")
@@ -80,23 +119,18 @@ public class NakadiProducerAutoConfiguration {
                 return new StupsTokenComponent(accessTokenUri, Arrays.asList(accessTokenScopes));
             }
         }
-
-        @Bean
-        @ConditionalOnMissingBean
-        RequestFactory requestFactory(@Value("${nakadi-producer.encoding:GZIP}") ContentEncoding encoding) {
-            return new SimpleRequestFactory(encoding);
-        }
     }
 
     @ConditionalOnProperty(name="nakadi-producer.submission-enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnMissingBean(NakadiPublishingClient.class)
-    @ConditionalOnBean(NakadiClient.class)
+    @ConditionalOnClass(name = "nakadi.NakadiClient")
     @Configuration
-    static class ExistingFahrscheinNakadiClientConfiguration {
+    static class ExistingNakadiClientConfiguration {
 
         @Bean
-        public NakadiPublishingClient nakadiProducerPublishingClient(NakadiClient fahrscheinNakadiClient) {
-            return new FahrscheinNakadiPublishingClient(fahrscheinNakadiClient);
+        public NakadiPublishingClient nakadiProducerPublishingClient(
+                @Qualifier("nakadiClient") Object nakadiClient) {
+            return new NakadiJavaPublishingClient(nakadiClient);
         }
     }
 

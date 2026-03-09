@@ -19,7 +19,6 @@ import java.util.stream.StreamSupport;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static org.springframework.jdbc.core.namedparam.SqlParameterSource.TYPE_UNKNOWN;
-import static org.zalando.fahrschein.Preconditions.checkArgument;
 
 /**
  * A helper class to simulate query batching for SQL statements which return data,
@@ -97,8 +96,9 @@ public class QueryStatementBatcher<T> {
         this.resultRowMapper = resultMapper;
 
         sortDescending(templateSizes);
-        checkArgument(templateSizes[templateSizes.length-1] == 1,
-                "smallest template size is not 1!");
+        if (templateSizes[templateSizes.length-1] != 1) {
+            throw new IllegalArgumentException("smallest template size is not 1!");
+        }
         this.subTemplates = IntStream.of(templateSizes)
                 .mapToObj(size -> new SubTemplate(
                                         size,
