@@ -2,6 +2,7 @@ package org.zalando.nakadiproducer.transmission.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import nakadi.Event;
 import nakadi.NakadiClient;
 import nakadi.Response;
 import org.zalando.nakadiproducer.transmission.NakadiPublishingClient;
@@ -45,7 +46,8 @@ public class NakadiJavaPublishingClient implements NakadiPublishingClient {
         // Call nakadi-java's send method
         // nakadi-java detects Strings at runtime and treats them as raw JSON
         @SuppressWarnings("unchecked")
-        Response response = delegate.resources().events().send(eventType, (Collection) jsonEvents);
+        Collection<Event> rawJsonEvents = (Collection<Event>) (Collection<?>) jsonEvents;
+        Response response = delegate.resources().events().send(eventType, rawJsonEvents);
 
         // Handle 207 partial success - need to parse the response and throw exception with details
         if (response.statusCode() == 207) {
@@ -63,4 +65,3 @@ public class NakadiJavaPublishingClient implements NakadiPublishingClient {
         }
     }
 }
-

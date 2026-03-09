@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
@@ -64,11 +63,14 @@ public class NakadiProducerAutoConfiguration {
                 @Value("${nakadi-producer.nakadi-base-uri}") URI nakadiBaseUri,
                 @Value("${nakadi-producer.enable-compression:true}") boolean enableCompression) {
 
-            // Create TokenProvider that wraps the AccessTokenProvider
-            TokenProvider tokenProvider = () -> Optional.ofNullable(accessTokenProvider.getAccessToken());
+            TokenProvider tokenProvider = new TokenProvider() {
+                @Override
+                public Optional<String> authHeaderValue(String ignored) {
+                    return Optional.ofNullable(accessTokenProvider.getAccessToken());
+                }
+            };
 
-            // Build the nakadi-java client
-            NakadiClient.NakadiClientBuilder builder = NakadiClient.newBuilder()
+            NakadiClient.Builder builder = NakadiClient.newBuilder()
                     .baseURI(nakadiBaseUri)
                     .tokenProvider(tokenProvider);
 
