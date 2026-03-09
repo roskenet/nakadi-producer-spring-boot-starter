@@ -42,6 +42,8 @@ import org.zalando.nakadiproducer.transmission.impl.NakadiJavaPublishingClient;
 import org.zalando.tracer.Tracer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import nakadi.NakadiClient;
+import nakadi.TokenProvider;
 
 @Configuration
 @AutoConfigureAfter(name="org.zalando.tracer.spring.TracerAutoConfiguration")
@@ -60,50 +62,23 @@ public class NakadiProducerAutoConfiguration {
         public NakadiPublishingClient nakadiProducerPublishingClient(
                 AccessTokenProvider accessTokenProvider,
                 @Value("${nakadi-producer.nakadi-base-uri}") URI nakadiBaseUri,
-                @Value("${nakadi-producer.enable-compression:true}") boolean enableCompression) throws Exception {
+                @Value("${nakadi-producer.enable-compression:true}") boolean enableCompression) {
 
-            // Use reflection to create nakadi-java client without compile-time dependency
-            try {
-                // Load the NakadiClient class
-                Class<?> nakadiClientClass = Class.forName("nakadi.NakadiClient");
-                Class<?> tokenProviderClass = Class.forName("nakadi.TokenProvider");
+            // Create TokenProvider that wraps the AccessTokenProvider
+            TokenProvider tokenProvider = () -> Optional.ofNullable(accessTokenProvider.getAccessToken());
 
-                // Create TokenProvider lambda that wraps the AccessTokenProvider
-                Object tokenProvider = java.lang.reflect.Proxy.newProxyInstance(
-                        Thread.currentThread().getContextClassLoader(),
-                        new Class[] { tokenProviderClass },
-                        (proxy, method, args) -> {
-                            if (method.getName().equals("authHeaderValue")) {
-                                String token = accessTokenProvider.getAccessToken();
-                                return Optional.ofNullable(token);
-                            }
-                            return null;
-                        }
-                );
+            // Build the nakadi-java client
+            NakadiClient.NakadiClientBuilder builder = NakadiClient.newBuilder()
+                    .baseURI(nakadiBaseUri)
+                    .tokenProvider(tokenProvider);
 
-                // Get the newBuilder method
-                Object builder = nakadiClientClass.getMethod("newBuilder").invoke(null);
-
-                // Call baseURI
-                builder.getClass().getMethod("baseURI", java.net.URI.class).invoke(builder, nakadiBaseUri);
-
-                // Call tokenProvider
-                builder.getClass().getMethod("tokenProvider", tokenProviderClass).invoke(builder, tokenProvider);
-
-                // Handle compression
-                if (enableCompression) {
-                    builder.getClass().getMethod("enablePublishingCompression").invoke(builder);
-                }
-
-                // Build the client
-                Object nakadiClient = builder.getClass().getMethod("build").invoke(builder);
-
-                return new NakadiJavaPublishingClient(nakadiClient);
-            } catch (ClassNotFoundException e) {
-                // Fallback for when nakadi-java is not on the classpath
-                log.error("nakadi-java-client not found on classpath", e);
-                throw new IllegalStateException("nakadi-java-client library is required but not found", e);
+            if (enableCompression) {
+                builder.enablePublishingCompression();
             }
+
+            NakadiClient nakadiClient = builder.build();
+
+            return new NakadiJavaPublishingClient(nakadiClient);
         }
 
         @ConditionalOnClass(name = "org.zalando.stups.tokens.Tokens")
@@ -129,7 +104,7 @@ public class NakadiProducerAutoConfiguration {
 
         @Bean
         public NakadiPublishingClient nakadiProducerPublishingClient(
-                @Qualifier("nakadiClient") Object nakadiClient) {
+                @Qualifier("nakadiClient") NakadiClient nakadiClient) {
             return new NakadiJavaPublishingClient(nakadiClient);
         }
     }

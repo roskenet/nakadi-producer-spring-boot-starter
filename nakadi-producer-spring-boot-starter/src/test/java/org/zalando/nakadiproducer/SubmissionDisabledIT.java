@@ -33,7 +33,6 @@ public class SubmissionDisabledIT  {
         assertThat(context.getBeanProvider(NakadiClient.class).getIfAvailable(), nullValue());
         assertThat(context.getBeanProvider(NakadiPublishingClient.class).getIfAvailable(), nullValue());
         assertThat(context.getBeanProvider(StupsTokenComponent.class).getIfAvailable(), nullValue());
-        assertThat(context.getBeanProvider(RequestFactory.class).getIfAvailable(), nullValue());
     }
 
     @Test

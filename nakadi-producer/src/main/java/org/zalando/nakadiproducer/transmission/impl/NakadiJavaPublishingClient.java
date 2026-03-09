@@ -2,9 +2,11 @@ package org.zalando.nakadiproducer.transmission.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import nakadi.NakadiClient;
+import nakadi.Response;
 import org.zalando.nakadiproducer.transmission.NakadiPublishingClient;
 
-import java.lang.reflect.InvocationTargetException;
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -16,14 +18,13 @@ import java.util.stream.Collectors;
  * partial success responses by throwing a NakadiJavaPublishingException with batch item details.
  */
 public class NakadiJavaPublishingClient implements NakadiPublishingClient {
-    private final Object delegate; // nakadi.NakadiClient
+    private final NakadiClient delegate;
     private final ObjectMapper objectMapper;
 
     /**
      * Constructor that takes a nakadi-java NakadiClient instance.
-     * We use Object type to avoid compile-time dependency on nakadi-java.
      */
-    public NakadiJavaPublishingClient(Object nakadiClient) {
+    public NakadiJavaPublishingClient(NakadiClient nakadiClient) {
         this.delegate = nakadiClient;
         this.objectMapper = new ObjectMapper();
     }
@@ -41,52 +42,25 @@ public class NakadiJavaPublishingClient implements NakadiPublishingClient {
                 })
                 .collect(Collectors.toList());
 
-        // Use reflection to call: delegate.resources().events().send(eventType, jsonEvents)
-        try {
-            // Get the resources object
-            Object resources = delegate.getClass().getMethod("resources").invoke(delegate);
+        // Call nakadi-java's send method
+        // nakadi-java detects Strings at runtime and treats them as raw JSON
+        @SuppressWarnings("unchecked")
+        Response response = delegate.resources().events().send(eventType, (Collection) jsonEvents);
 
-            // Get the EventResource
-            Object eventResource = resources.getClass().getMethod("events").invoke(resources);
+        // Handle 207 partial success - need to parse the response and throw exception with details
+        if (response.statusCode() == 207) {
+            String responseString = response.responseBody().asString();
 
-            // Call send method - nakadi-java accepts List<String> as raw JSON
-            Object response = eventResource.getClass()
-                    .getMethod("send", String.class, java.util.Collection.class)
-                    .invoke(eventResource, eventType, (Object) jsonEvents);
+            List<NakadiJavaPublishingException.BatchItemResponse> batchItems = objectMapper.readValue(
+                    responseString,
+                    new TypeReference<List<NakadiJavaPublishingException.BatchItemResponse>>() {});
+            throw new NakadiJavaPublishingException(batchItems);
+        }
 
-            // Check response status code using reflection
-            int statusCode = (int) response.getClass().getMethod("statusCode").invoke(response);
-
-            // Handle 207 partial success - need to parse the response and throw exception with details
-            if (statusCode == 207) {
-                Object responseBody = response.getClass().getMethod("responseBody").invoke(response);
-                String responseString = (String) responseBody.getClass().getMethod("asString").invoke(responseBody);
-
-                List<NakadiJavaPublishingException.BatchItemResponse> batchItems = objectMapper.readValue(
-                        responseString,
-                        new TypeReference<List<NakadiJavaPublishingException.BatchItemResponse>>() {});
-                throw new NakadiJavaPublishingException(batchItems);
-            }
-
-            // For other errors, nakadi-java already throws exceptions, but let's check anyway
-            if (statusCode >= 300) {
-                throw new RuntimeException("Failed to publish events: HTTP " + statusCode);
-            }
-        } catch (NakadiJavaPublishingException e) {
-            // Re-throw our custom exception as-is
-            throw e;
-        } catch (InvocationTargetException e) {
-            // Unwrap invocation target exceptions from nakadi-java
-            if (e.getTargetException() instanceof Exception) {
-                throw (Exception) e.getTargetException();
-            }
-            throw new RuntimeException("Failed to publish events", e);
+        // For other errors, nakadi-java already throws exceptions, but let's check anyway
+        if (response.statusCode() >= 300) {
+            throw new RuntimeException("Failed to publish events: HTTP " + response.statusCode());
         }
     }
 }
-
-
-
-
-
 
