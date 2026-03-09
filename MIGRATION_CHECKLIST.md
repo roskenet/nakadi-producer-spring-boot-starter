@@ -11,12 +11,12 @@
 - [x] Created new `NakadiJavaPublishingClient` class
 - [x] Created `NakadiJavaPublishingException` with wrapper `BatchItemResponse`
 - [x] Removed old `FahrscheinNakadiPublishingClient` class
-- [x] Implemented reflection-based initialization to avoid compile-time dependency
+- [x] Replaced reflection workaround with direct nakadi-java integration
 
 ### Configuration
 - [x] Updated `NakadiProducerAutoConfiguration` to use nakadi-java builder
 - [x] Added `@ConditionalOnClass("nakadi.NakadiClient")` checks
-- [x] Implemented TokenProvider via dynamic proxy
+- [x] Implemented TokenProvider adapter using `authHeaderValue(String)`
 - [x] Added support for `nakadi-producer.enable-compression` property
 
 ### Event Processing
@@ -108,8 +108,7 @@ grep -r "fahrschein" \
 
 Successfully migrated from fahrschein to nakadi-java while:
 - Maintaining backward compatibility at the API level
-- Using reflection to avoid compile-time dependency
+- Removing reflection-based workarounds
 - Preserving all existing error handling patterns
 - Keeping configuration changes minimal
 - Ensuring all code compiles without errors
-

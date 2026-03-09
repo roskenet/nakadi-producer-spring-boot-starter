@@ -9,13 +9,13 @@ This document summarizes the migration of the nakadi-producer-spring-boot-starte
 
 **File: `nakadi-producer/pom.xml`**
 - Removed: `org.zalando:fahrschein:0.24.0`
-- Added: `org.zalando.nakadi:nakadi-java-client:0.23.1-SNAPSHOT` (marked as optional)
+- Added: `org.zalando.nakadi:nakadi-java-client:0.22.3` (marked as optional)
 
 ### 2. Publishing Client Implementation
 
 **Created: `nakadi-producer/src/main/java/org/zalando/nakadiproducer/transmission/impl/NakadiJavaPublishingClient.java`**
 - New adapter class implementing `NakadiPublishingClient`
-- Uses reflection to avoid compile-time dependency on nakadi-java
+- Uses direct `nakadi.NakadiClient` integration (reflection removed)
 - Converts events to raw JSON strings for nakadi-java's send method
 - Handles 207 (partial success) responses by throwing `NakadiJavaPublishingException`
 
@@ -40,8 +40,8 @@ This document summarizes the migration of the nakadi-producer-spring-boot-starte
 - Removed: fahrschein imports (`org.zalando.fahrschein.*`)
 - Renamed: `FahrscheinWithTokensNakadiClientConfiguration` → `NakadiJavaWithTokensClientConfiguration`
 - Renamed: `ExistingFahrscheinNakadiClientConfiguration` → `ExistingNakadiClientConfiguration`
-- Updated configuration to use reflection-based instantiation of nakadi-java's `NakadiClient`
-- TokenProvider is created using a dynamic proxy to wrap `AccessTokenProvider`
+- Updated configuration to construct nakadi-java's `NakadiClient` directly
+- TokenProvider is implemented using the 0.22.3 `authHeaderValue(String)` contract
 - Compression is enabled via `builder.enablePublishingCompression()` when configured
 
 ### 5. Utility Class Updates
@@ -80,11 +80,10 @@ This document summarizes the migration of the nakadi-producer-spring-boot-starte
 
 ## Key Design Decisions
 
-### 1. Reflection-Based Integration
-- Used Java reflection to avoid compile-time dependency on nakadi-java
-- Allows nakadi-java to be truly optional
-- Configuration classes can be loaded even if nakadi-java is not on classpath
-- Error handling at runtime if nakadi-java is needed but not available
+### 1. Direct Nakadi-Java Integration
+- Uses compile-time `nakadi-java-client` types directly
+- Reflection workaround removed
+- `NakadiClient` remains optional for consumers via Spring `@ConditionalOnClass`
 
 ### 2. Wrapper Classes
 - Created `NakadiJavaPublishingException` with nested `BatchItemResponse` wrapper
@@ -92,8 +91,8 @@ This document summarizes the migration of the nakadi-producer-spring-boot-starte
 - Maintains backward-compatible error handling patterns
 
 ### 3. Token Provider Integration
-- Used dynamic proxy pattern to wrap `AccessTokenProvider` as nakadi-java's `TokenProvider`
-- `TokenProvider` interface requires returning `Optional<String>` instead of plain `String`
+- Uses a concrete `TokenProvider` adapter to wrap `AccessTokenProvider`
+- `TokenProvider#authHeaderValue(String)` returns `Optional<String>`
 - Adapter handles this conversion transparently
 
 ## Building the Project
@@ -138,4 +137,3 @@ Note: `NakadiClientContentEncodingIT` is disabled and should be updated to work 
 2. Consider adding support for other nakadi-java compression algorithms
 3. Add integration tests with real nakadi-java client behavior
 4. Document configuration changes in main README
-
